@@ -1,9 +1,5 @@
-name: CI
-on:
-  workflow_dispatch:
-  push:
-    branches:
-      - main
+name: Reusable workflow example
+on: workflow_call
 jobs:
   ci:
     name: CI
@@ -19,6 +15,4 @@ jobs:
       - name: Install dependencies
         run: npm install
       - name: Log
-        run: echo 'Hello, world!'
-  call-workflow-2-in-local-repo:
-    uses: ./.github/workflows/ci2.yml
+        run: echo 'I am a reusable workflow!'
