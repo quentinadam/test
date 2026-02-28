@@ -1,0 +1,22 @@
+name: "Test – variable_one=true (job_one succeeds)"
+
+on:
+  workflow_dispatch:
+
+# Expected outcomes
+# ─────────────────────────────────────────────────────────────────────────────
+#   job_one  → RUNS/SUCCEEDS   (variable_one=true)
+#   job_two  → SKIPPED         (variable_two=false, if evaluates to false)
+#
+# Even though job_one succeeded (so success() would normally be true),
+# variable_two=false makes the whole if condition false, so job_two is skipped.
+# This shows that variable_two is an independent gate that can suppress job_two
+# even when job_one is healthy.
+# ─────────────────────────────────────────────────────────────────────────────
+
+jobs:
+  call:
+    uses: ./.github/workflows/reusable-job-conditions.yml
+    with:
+      variable_one: true    # job_one will succeed
+      variable_two: false   # job_two is skipped regardless of job_one's result

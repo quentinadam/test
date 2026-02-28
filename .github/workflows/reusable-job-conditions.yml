@@ -1,0 +1,67 @@
+name: "Reusable – Job Conditions"
+
+on:
+  workflow_call:
+    inputs:
+      variable_one:
+        description: "When true job_one succeeds; when false it fails."
+        type: boolean
+        required: true
+      variable_two:
+        description: "When true job_two runs (regardless of job_one); when false job_two is always skipped."
+        type: boolean
+        required: true
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Dependency graph
+#
+#   job_one  (succeeds or fails depending on variable_one)
+#     └── job_two  if: always() && inputs.variable_two
+#                  │
+#                  ├── variable_two = true  → job_two RUNS (always(), so even
+#                  │                          if job_one failed it still runs)
+#                  └── variable_two = false → job_two SKIPPED (if is false,
+#                                             always() is never even evaluated)
+#
+# The always() is necessary because, without it, the implicit success() would
+# skip job_two whenever job_one fails – ignoring variable_two entirely.
+# ─────────────────────────────────────────────────────────────────────────────
+
+jobs:
+
+  job_one:
+    name: "job_one (variable_one=${{ inputs.variable_one }})"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Succeed or fail based on variable_one
+        run: |
+          if [ "${{ inputs.variable_one }}" = "true" ]; then
+            echo "variable_one is true → succeeding."
+            exit 0
+          else
+            echo "variable_one is false → failing."
+            exit 1
+          fi
+
+  job_two:
+    name: "job_two (variable_two=${{ inputs.variable_two }})"
+    needs: job_one
+    # always()            – override the implicit success() so a failed job_one
+    #                       does not automatically skip this job.
+    # && inputs.variable_two – then apply the caller-controlled gate on top.
+    #
+    # Truth table:
+    #   job_one  variable_two  │  always()  &&  variable_two  │  outcome
+    #   ──────── ────────────  │  ─────────────────────────── │  ───────
+    #   success  true          │  true      &&  true          │  RUNS
+    #   success  false         │  true      &&  false         │  SKIPPED
+    #   failure  true          │  true      &&  true          │  RUNS
+    #   failure  false         │  true      &&  false         │  SKIPPED
+    if: always() && inputs.variable_two
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report context
+        run: |
+          echo "job_one status : ${{ needs.job_one.result }}"
+          echo "variable_two   : ${{ inputs.variable_two }}"
+          echo "job_two is running."

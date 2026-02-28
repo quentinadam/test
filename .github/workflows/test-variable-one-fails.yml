@@ -1,0 +1,22 @@
+name: "Test – variable_one=false (job_one fails)"
+
+on:
+  workflow_dispatch:
+
+# Expected outcomes
+# ─────────────────────────────────────────────────────────────────────────────
+#   job_one  → FAILS   (variable_one=false)
+#   job_two  → RUNS    (variable_two=true, and always() lets it run despite
+#                        job_one having failed)
+#
+# This is the interesting case: job_two has a `needs` on job_one, yet it still
+# runs because the if condition starts with always(), overriding the implicit
+# success() that would otherwise skip it.
+# ─────────────────────────────────────────────────────────────────────────────
+
+jobs:
+  call:
+    uses: ./.github/workflows/reusable-job-conditions.yml
+    with:
+      variable_one: false   # job_one will fail
+      variable_two: true    # job_two should still run (always() saves it)
