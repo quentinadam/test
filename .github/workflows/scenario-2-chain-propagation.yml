@@ -1,4 +1,4 @@
-name: "Scenario 2 – Chain Propagation"
+name: "Scenario 2 - Chain Propagation"
 
 # Trigger manually so you can run it on demand.
 on:

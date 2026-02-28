@@ -1,0 +1,104 @@
+name: "Scenario 3 - if-condition Breaks Failure Propagation"
+
+# Trigger manually so you can run it on demand.
+on:
+  workflow_dispatch:
+
+# ─────────────────────────────────────────────────────────────────────────────
+# The question this scenario answers:
+#
+#   job_2 depends on job_1 but is gated by an if condition that evaluates to
+#   false (the branch will never be 'no_this').  job_3 then depends on job_2
+#   and runs when job_2 is "success OR skipped".  job_4 depends on job_3 with
+#   no special if condition.
+#
+#   QUESTION: Will job_4 run if job_1 fails?
+#   ANSWER:   YES – here is why, step by step.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# Key rule:  an explicit `if:` on a job REPLACES the implicit `success()` check.
+#            GitHub does not secretly AND your `if` with success().
+#            The job runs when your expression is true, regardless of whether
+#            its dependencies succeeded or failed.
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Dependency graph and expected outcomes (job_1 intentionally FAILS):
+#
+#   job_1  (FAILS)
+#     └── job_2  if: github.ref == 'refs/heads/no_this'
+#                      → always SKIPPED (expression is false)
+#                        Note: this is NOT caused by job_1 failing.
+#                        The if expression replaces success(), so the
+#                        skip reason is the false if, not the failed dep.
+#
+#               └── job_3  if: always() && (needs.job_2.result == 'success'
+#                                        || needs.job_2.result == 'skipped')
+#                                → RUNS  (job_2 is skipped → 'skipped' matches)
+#
+#                         └── job_4  (no if, default success())
+#                                → RUNS  (job_3 succeeded)
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# Contrast: what would happen WITHOUT the custom if on job_2?
+#
+#   job_1  (FAILS)
+#     └── job_2  (no if, default success())
+#                      → SKIPPED because success() is false
+#
+#               └── job_3  if: always() && (needs.job_2.result == 'success'
+#                                        || needs.job_2.result == 'skipped')
+#                                → RUNS  (job_2 is still skipped → same result)
+#
+# In this particular chain the outcome for job_3 and job_4 is the same,
+# because job_2 ends up skipped in both cases.  The difference matters when
+# the branch IS 'no_this': with the custom if, job_2 would run even after a
+# failed job_1; without it, job_2 would be skipped by the implicit success().
+# ─────────────────────────────────────────────────────────────────────────────
+
+jobs:
+
+  job_1:
+    name: "job_1 - intentional FAIL"
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "job_1: running. About to fail intentionally."
+          exit 1
+
+  job_2:
+    name: "job_2 - expect SKIPPED (if is false, not because job_1 failed)"
+    needs: job_1
+    # This if expression REPLACES the implicit success().
+    # The branch 'no_this' does not exist, so this is always false.
+    # Result: job_2 is SKIPPED regardless of job_1's outcome.
+    if: github.ref == 'refs/heads/no_this'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "job_2: I ran – branch must be 'no_this'."
+
+  job_3:
+    name: "job_3 - expect RUNS (job_2 was skipped, which is acceptable)"
+    needs: job_2
+    # always()  – needed to override the implicit success() that would skip
+    #             this job because job_2 was skipped (skipped != succeeded).
+    # The parenthesised OR explicitly accepts both outcomes of job_2 that
+    # we consider non-blocking.
+    if: "always() && (needs.job_2.result == 'success' || needs.job_2.result == 'skipped')"
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "job_2 result: ${{ needs.job_2.result }}"
+          echo "job_3: running because job_2 succeeded or was skipped."
+
+  job_4:
+    name: "job_4 - expect RUNS (job_3 succeeded, default success() is true)"
+    needs: job_3
+    # No explicit if.  Default is success().  job_3 succeeded, so this runs.
+    # job_1's failure never reaches here because:
+    #   - job_2's if expression broke the propagation path
+    #   - job_3 explicitly handled the skipped case and succeeded
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "job_3 result: ${{ needs.job_3.result }}"
+          echo "job_4: running normally. job_1 failed but it didn't matter."

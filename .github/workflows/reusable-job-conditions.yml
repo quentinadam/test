@@ -1,4 +1,4 @@
-name: "Reusable – Job Conditions"
+name: "Reusable - Job Conditions"
 
 on:
   workflow_call:
@@ -30,7 +30,7 @@ on:
 jobs:
 
   job_one:
-    name: "job_one (variable_one=${{ inputs.variable_one }})"
+    name: "job_one"
     runs-on: ubuntu-latest
     steps:
       - name: Succeed or fail based on variable_one
@@ -44,7 +44,7 @@ jobs:
           fi
 
   job_two:
-    name: "job_two (variable_two=${{ inputs.variable_two }})"
+    name: "job_two"
     needs: job_one
     # always()            – override the implicit success() so a failed job_one
     #                       does not automatically skip this job.

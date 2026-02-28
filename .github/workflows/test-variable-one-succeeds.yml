@@ -1,4 +1,4 @@
-name: "Test – variable_one=true (job_one succeeds)"
+name: "Test - variable_one=true (job_one succeeds)"
 
 on:
   workflow_dispatch:

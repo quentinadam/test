@@ -1,4 +1,4 @@
-name: "Scenario 1 – Basic Condition Mechanics"
+name: "Scenario 1 - Basic Condition Mechanics"
 
 # Trigger manually so you can run it on demand.
 on:
