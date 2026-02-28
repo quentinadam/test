@@ -1,0 +1,138 @@
+name: "Scenario 2 – Chain Propagation"
+
+# Trigger manually so you can run it on demand.
+on:
+  workflow_dispatch:
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Dependency graph and expected outcomes
+#
+#  step_a (SUCCEEDS)
+#    └── step_b (FAILS)
+#          ├── step_c  (no if)           → SKIPPED   (b failed, success()=false)
+#          │     ├── step_e  (no if)     → SKIPPED   (c was skipped)
+#          │     ├── step_f  (failure()) → SKIPPED ⚠️ (c was skipped, NOT failed)
+#          │     └── step_g  (always())  → RUNS ✓
+#          │
+#          └── step_d  (failure())       → RUNS ✓    (b actually failed)
+#                └── step_h  (no if)     → RUNS ✓    (d succeeded)
+#
+#
+#  Multi-dependency examples (needs two jobs at once):
+#
+#  step_a (SUCCEEDS) ──┐
+#                      ├── step_i  (no if)     → SKIPPED ⚠️ (b failed → success()=false)
+#  step_b (FAILS)   ───┘
+#
+#  step_d (RUNS/SUCCEEDS) ──┐
+#                           ├── step_j  (no if) → SKIPPED ⚠️ (b still failed in the chain)
+#  step_b (FAILS)      ─────┘
+#
+#  step_d (RUNS/SUCCEEDS) ──┐
+#                           └── step_k  (failure()) → RUNS ✓ (b is a direct need and it failed)
+#  step_b (FAILS)      ─────┘
+#
+# ─────────────────────────────────────────────────────────────────────────────
+
+jobs:
+
+  # ── Tier 0 ──────────────────────────────────────────────────────────────────
+  step_a:
+    name: "step_a → expect: RUNS (succeeds)"
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "step_a: I succeed normally."
+
+  # ── Tier 1 ──────────────────────────────────────────────────────────────────
+  step_b:
+    name: "step_b → expect: RUNS (fails)"
+    needs: step_a
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "step_b: step_a succeeded, so I run – but I intentionally fail now."
+      - run: exit 1
+
+  # ── Tier 2 – direct dependents of step_b ─────────────────────────────────────
+  step_c:
+    name: "step_c → expect: SKIPPED (b failed, default success())"
+    needs: step_b
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "step_c: I ran – but step_b failed so success() should be false."
+
+  step_d:
+    name: "step_d → expect: RUNS (b failed, failure()=true)"
+    needs: step_b
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "step_d: I run because step_b actually failed, making failure()=true."
+
+  # ── Tier 3 – dependents of the SKIPPED step_c ────────────────────────────────
+  step_e:
+    name: "step_e → expect: SKIPPED (c was skipped, default success())"
+    needs: step_c
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "step_e: I ran – skipped step_c should cause success()=false."
+
+  step_f:
+    name: "step_f → expect: SKIPPED ⚠️ (c was skipped, NOT failed → failure()=false)"
+    needs: step_c
+    if: failure()
+    # KEY INSIGHT: step_c's status is "skipped", not "failure".
+    # failure() only returns true when the direct dependency *actually failed*.
+    # A skip does NOT count as a failure here.
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "step_f: I ran – but failure() should be false because step_c was skipped."
+
+  step_g:
+    name: "step_g → expect: RUNS (always() ignores skip)"
+    needs: step_c
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "step_g: I run because always() is true regardless of step_c being skipped."
+
+  # ── Tier 3 – dependent of the SUCCEEDED step_d ───────────────────────────────
+  step_h:
+    name: "step_h → expect: RUNS (d succeeded, default success()=true)"
+    needs: step_d
+    # No explicit if.  step_d ran AND succeeded, so success() is true.
+    # This shows that failure() recovery jobs can feed normal downstream work.
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "step_h: step_d succeeded (despite step_b failing), so I run normally."
+
+  # ── Multi-dependency examples ─────────────────────────────────────────────────
+
+  step_i:
+    name: "step_i → expect: SKIPPED ⚠️ (needs a+b; b failed → success()=false)"
+    needs: [step_a, step_b]
+    # Even though step_a succeeded, step_b failed.
+    # success() requires ALL direct needs to have succeeded.
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "step_i: Both a and b must succeed for success() to be true."
+
+  step_j:
+    name: "step_j → expect: SKIPPED ⚠️ (needs d+b; b failed → success()=false even though d succeeded)"
+    needs: [step_d, step_b]
+    # step_d succeeded (it's a failure-recovery job that ran fine).
+    # But step_b (also a direct need) failed.
+    # success() still returns false because not ALL direct needs succeeded.
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "step_j: step_d succeeded but step_b (also a direct need) failed → skipped."
+
+  step_k:
+    name: "step_k → expect: RUNS (needs d+b; failure()=true because b failed)"
+    needs: [step_d, step_b]
+    if: failure()
+    # step_b is a direct need and it failed → failure() is true.
+    # step_d is also a direct need and it succeeded.
+    # failure() returns true if ANY direct need has failed.
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "step_k: failure() is true because step_b (direct need) failed."

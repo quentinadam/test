@@ -1,0 +1,99 @@
+name: "Scenario 1 – Basic Condition Mechanics"
+
+# Trigger manually so you can run it on demand.
+on:
+  workflow_dispatch:
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Dependency graph
+#
+#                        ┌── on_success  (no if / default success()) → SKIPPED
+#                        │
+#   root (intentional    ├── on_failure  (if: failure())             → RUNS ✓
+#         FAIL)  ────────┤
+#                        └── on_always   (if: always())              → RUNS ✓
+#
+#
+# Then, starting from the SKIPPED on_success job:
+#
+#                        ┌── after_skipped_default   (no if)          → SKIPPED
+#                        │
+#   on_success           ├── after_skipped_on_failure (if: failure()) → SKIPPED ⚠️
+#   (SKIPPED)  ──────────┤     ↑ KEY INSIGHT: failure() is false when the
+#                        │       dependency was *skipped*, not actually *failed*.
+#                        │
+#                        └── after_skipped_on_always  (if: always())  → RUNS ✓
+#
+# ─────────────────────────────────────────────────────────────────────────────
+
+jobs:
+
+  # ── Tier 0 ──────────────────────────────────────────────────────────────────
+  root:
+    name: "root (intentional FAIL)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Announce intent
+        run: echo "This job intentionally fails to drive the condition scenarios below."
+      - name: Fail
+        run: exit 1
+
+  # ── Tier 1 – direct dependents of root ──────────────────────────────────────
+
+  on_success:
+    name: "on_success → expect: SKIPPED"
+    needs: root
+    # No explicit `if`.  GitHub's implicit default is `if: success()`,
+    # which evaluates to false because `root` failed.
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "I ran – this means success() evaluated to true."
+
+  on_failure:
+    name: "on_failure → expect: RUNS"
+    needs: root
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "I ran because failure() is true (root failed)."
+
+  on_always:
+    name: "on_always → expect: RUNS"
+    needs: root
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "I ran because always() is unconditionally true."
+
+  # ── Tier 2 – dependents of the SKIPPED on_success job ──────────────────────
+
+  after_skipped_default:
+    name: "after_skipped_default → expect: SKIPPED"
+    needs: on_success
+    # Default success(): on_success was skipped (not succeeded), so this is
+    # also skipped.
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "I ran – success() was true despite on_success being skipped."
+
+  after_skipped_on_failure:
+    name: "after_skipped_on_failure → expect: SKIPPED ⚠️"
+    needs: on_success
+    if: failure()
+    # CRITICAL INSIGHT: failure() checks whether the *direct* dependency
+    # (on_success) has status "failure".  on_success has status "skipped",
+    # NOT "failure".  Therefore failure() is false and this job is ALSO skipped.
+    # This surprises many people who expect failure() to "see through" skips.
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "I ran – failure() was true despite on_success being skipped (not failed)."
+
+  after_skipped_on_always:
+    name: "after_skipped_on_always → expect: RUNS"
+    needs: on_success
+    if: always()
+    # always() is unconditionally true regardless of the dependency status
+    # (succeeded / failed / skipped / cancelled).
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "I ran because always() ignores on_success being skipped."
